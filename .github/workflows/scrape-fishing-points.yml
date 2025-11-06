@@ -8,6 +8,9 @@ on:
     # Run weekly on Sundays at 6:00 AM UTC
     - cron: '0 6 * * 0'
 
+permissions:
+  contents: write
+
 jobs:
   scrape:
     runs-on: ubuntu-latest
@@ -54,13 +57,10 @@ jobs:
         
     - name: Create Release
       if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      uses: softprops/action-gh-release@v1
       with:
         tag_name: release-${{ steps.date.outputs.date }}
-        release_name: NC Fishing Points - ${{ steps.date.outputs.date }}
+        name: NC Fishing Points - ${{ steps.date.outputs.date }}
         body: |
           Automated scrape of North Carolina fishing points from TidesPro.com
           
@@ -80,41 +80,8 @@ jobs:
           - Onslow Bay fishing locations
           - Outer Banks fishing locations
           - Raleigh Bay fishing locations
+        files: |
+          point_files/*.gpx
+          point_files/*.json
         draft: false
         prerelease: false
-        
-    - name: Get latest GPX file
-      id: gpx-file
-      run: |
-        GPX_FILE=$(ls point_files/*.gpx | head -1)
-        echo "gpx_file=${GPX_FILE}" >> $GITHUB_OUTPUT
-        echo "gpx_filename=$(basename ${GPX_FILE})" >> $GITHUB_OUTPUT
-        
-    - name: Get latest JSON file
-      id: json-file
-      run: |
-        JSON_FILE=$(ls point_files/*.json | head -1)
-        echo "json_file=${JSON_FILE}" >> $GITHUB_OUTPUT
-        echo "json_filename=$(basename ${JSON_FILE})" >> $GITHUB_OUTPUT
-        
-    - name: Upload GPX to Release
-      if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ${{ steps.gpx-file.outputs.gpx_file }}
-        asset_name: ${{ steps.gpx-file.outputs.gpx_filename }}
-        asset_content_type: application/gpx+xml
-        
-    - name: Upload JSON to Release
-      if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ${{ steps.json-file.outputs.json_file }}
-        asset_name: ${{ steps.json-file.outputs.json_filename }}
-        asset_content_type: application/json
