@@ -247,13 +247,13 @@ class FishingPointScraper:
                         # Set sym and type based on description content
                         description_lower = description.lower()
                         if 'wreck' in description_lower:
-                            location['sym'] = 'Wreck'
+                            location['sym'] = 'Shipwreck'
                             location['type'] = 'Shipwreck'
                         elif 'concrete' in description_lower:
                             location['sym'] = 'Reef'
                             location['type'] = 'Concrete Reef'
                         else:
-                            location['sym'] = 'Reef'
+                            location['sym'] = 'Fish Attractor'
                             location['type'] = 'Artificial Reef'
                         
                         depth_info = f" (depth: {depth:.0f} ft)" if depth else ""
