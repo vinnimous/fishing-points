@@ -1,5 +1,13 @@
-requests>=2.31.0
-beautifulsoup4>=4.12.0
-lxml>=4.9.0
-gpxpy>=1.5.0
-defusedxml>=0.7.1
+# North Carolina Fishing Points Scraper - Python Dependencies
+# 
+# Core web scraping and HTTP handling
+requests>=2.31.0                # HTTP library for web scraping with session management
+beautifulsoup4>=4.12.0          # HTML/XML parsing for TidesPro.com data extraction
+lxml>=4.9.0                     # Fast XML/HTML parser backend for BeautifulSoup
+
+# GPX file processing and XML security
+gpxpy>=1.5.0                    # GPX file format handling and validation (optional - using custom generator)
+defusedxml>=0.7.1               # Secure XML parsing to prevent XML bomb attacks
+
+# Note: gpxpy is included for potential future enhancements but current implementation
+# uses custom GPX generation for marine GPS optimization and Garmin extensions support
