@@ -310,22 +310,7 @@ def main():
         fishing_locations = nc.scraper()
         
         if fishing_locations:
-            # Success summary with sample data
-            print(f"\n� Mission accomplished! {len(fishing_locations)} locations extracted")
-            print("📊 Sample locations:")
-            
-            for i, location in enumerate(fishing_locations[:3]):  # Preview first 3
-                name = location.get('name', 'Unknown')
-                lat = location.get('latitude', 'N/A')
-                lon = location.get('longitude', 'N/A')
-                depth = location.get('depth')
-                depth_info = f" ({depth:.0f}ft)" if depth else ""
-                print(f"  {i+1}. {name} - {lat}, {lon}{depth_info}")
-                
-            if len(fishing_locations) > 3:
-                print(f"  📋 ... and {len(fishing_locations) - 3} more locations")
-                
-            print(f"\n🗺️ Ready for GPS import - check point_files/ directory")
+            print(f"\n📍 Total locations extracted: {len(fishing_locations)}")
         else:
             print("\n⚠️ No fishing locations were extracted")
             print("🔍 This may indicate website changes or connectivity issues")

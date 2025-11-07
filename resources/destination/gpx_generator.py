@@ -19,7 +19,7 @@ Version: 2.0
 """
 
 import xml.etree.ElementTree as ET
-from xml.dom.minidom import parseString
+from defusedxml.minidom import parseString
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -42,6 +42,38 @@ class GPXGenerator:
         """Initialize GPX generator with required XML namespaces."""
         self.gpx_namespace = "http://www.topografix.com/GPX/1/1"
         self.garmin_namespace = "http://www.garmin.com/xmlschemas/GpxExtensions/v3"
+    
+    def _clean_description_start(self, text: str) -> str:
+        """
+        Clean description text by removing problematic starting characters.
+        
+        Removes leading spaces, dashes with spaces, and forward slashes that can
+        cause display issues in GPS devices and navigation applications.
+        
+        Args:
+            text (str): Raw description text
+            
+        Returns:
+            str: Cleaned description text with problematic prefixes removed
+        """
+        if not text:
+            return ""
+        
+        # Strip leading and trailing whitespace first
+        cleaned = text.strip()
+        
+        # Remove problematic starting patterns
+        while cleaned and (cleaned.startswith('- ') or 
+                          cleaned.startswith('/') or 
+                          cleaned.startswith(' ')):
+            if cleaned.startswith('- '):
+                cleaned = cleaned[2:].strip()  # Remove "- " and any following spaces
+            elif cleaned.startswith('/'):
+                cleaned = cleaned[1:].strip()  # Remove "/" and any following spaces
+            elif cleaned.startswith(' '):
+                cleaned = cleaned.lstrip()     # Remove leading spaces
+        
+        return cleaned
     
     def create_gpx_file(self, locations: List[Dict], output_path: str) -> bool:
         """
@@ -124,11 +156,16 @@ class GPXGenerator:
                 if full_name != short_name and ' ' in full_name:
                     long_name = ' '.join(full_name.split(' ')[1:])  # "Garry Ennis Reef - Site 1"
                     if long_name:
-                        desc_parts.append(long_name)
+                        # Clean up long_name by removing problematic starting characters
+                        long_name = self._clean_description_start(long_name)
+                        if long_name:  # Only add if still has content after cleaning
+                            desc_parts.append(long_name)
                 
                 # Append original site description if available
                 if location.get('description'):
-                    desc_parts.append(location['description'])
+                    cleaned_desc = self._clean_description_start(location['description'])
+                    if cleaned_desc:  # Only add if still has content after cleaning
+                        desc_parts.append(cleaned_desc)
                 
                 # Add description element if we have content
                 if desc_parts:
@@ -140,14 +177,15 @@ class GPXGenerator:
                 
                 # Intelligent symbol assignment based on structure type
                 # Priority: wreck detection > structure type > default fishing
+                # Use original full_name for wreck detection (before cleaning)
                 if (full_name != short_name and ' ' in full_name and 
                     'wreck' in ' '.join(full_name.split(' ')[1:]).lower()):
                     # Shipwreck symbol for better Garmin/Active Captain compatibility
                     sym_elem.text = "Shipwreck"
                 else:
-                    # Fish symbol for all other structures (reefs, artificial reefs, etc.)
-                    # More universally supported than "Reef" symbol
-                    sym_elem.text = "Fish"
+                    # Reef symbol for all other structures (reefs, artificial reefs, etc.)
+                    # Changed back from "Fish" to "Reef" for better symbol display
+                    sym_elem.text = "Reef"
                 
                 # Add waypoint type for additional GPS categorization
                 type_elem = ET.SubElement(wpt, "type")
@@ -164,7 +202,7 @@ class GPXGenerator:
                         category = ET.SubElement(categories, "gpxx:Category")
                         category.text = location['type']
                     
-                    # Add depth information in feet for fishing applications
+                    # Add depth information in meters for GPX standard compliance
                     if location.get('depth'):
                         depth = ET.SubElement(wpt_ext, "gpxx:Depth")
                         depth.text = str(location['depth'])

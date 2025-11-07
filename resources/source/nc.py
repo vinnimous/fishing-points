@@ -109,8 +109,6 @@ class FishingPointScraper:
             delay = SCRAPER_CONFIG['delay_between_requests']
             
         try:
-            print(f"Fetching: {url}")
-            
             # Respectful delay to avoid overwhelming the server
             time.sleep(delay)
             
@@ -120,14 +118,11 @@ class FishingPointScraper:
 
             # Parse HTML with lxml parser for better performance
             soup = BeautifulSoup(response.content, 'html.parser')
-            print(f"✓ Successfully fetched {url}")
             return soup
             
         except requests.RequestException as e:
-            print(f"✗ HTTP error fetching {url}: {e}")
             return None
         except Exception as e:
-            print(f"✗ Unexpected error parsing {url}: {e}")
             return None
     
     def extract_coordinates(self, text: str) -> Optional[Tuple[float, float]]:
@@ -197,13 +192,10 @@ class FishingPointScraper:
             table = soup.find('table')
             
         if table:
-            print("✓ Found fishing locations table")
-            
             # Try structured tbody approach first (proper HTML tables)
             tbody = table.find('tbody')
             if tbody:
                 rows = tbody.find_all('tr')
-                print(f"✓ Found {len(rows)} data rows in tbody")
                 
                 for row in rows:
                     cells = row.find_all('td')
@@ -214,7 +206,6 @@ class FishingPointScraper:
                             locations.append(location_data)
             else:
                 # Fallback: Parse all table rows (less structured tables)
-                print("⚠ No tbody found, parsing all table rows")
                 rows = table.find_all('tr')
                 for row in rows:
                     cells = row.find_all('td')
@@ -223,11 +214,9 @@ class FishingPointScraper:
                         if location_data:
                             locations.append(location_data)
         else:
-            print("⚠ No fishing locations table found, trying JavaScript extraction")
             # Last resort: Extract from JavaScript/JSON embedded in page
             locations.extend(self.extract_from_scripts(soup, base_url))
         
-        print(f"✓ Successfully extracted {len(locations)} fishing locations")
         return locations
     
     def extract_location_from_table_row(self, cells) -> Optional[Dict]:
@@ -309,22 +298,47 @@ class FishingPointScraper:
                 elif i >= 2:  # Skip name and description columns
                     cell_text = cell.get_text(strip=True)
                     
-                    # Comprehensive depth pattern matching with unit conversion
-                    depth_pattern = r'(\d+(?:\.\d+)?)\s*(ft|feet|fathoms|fath|f|m|meters?)\b'
-                    depth_match = re.search(depth_pattern, cell_text, re.IGNORECASE)
-                    
-                    if depth_match and not depth:  # Use first depth value found
-                        depth_value = float(depth_match.group(1))
-                        depth_unit = depth_match.group(2).lower()
+                    if not depth:  # Only process if we haven't found depth yet
+                        # Enhanced depth pattern matching with multiple approaches
+                        depth_patterns = [
+                            # Pattern 1: Number with explicit unit
+                            r'(\d+(?:\.\d+)?)\s*(ft|feet|fathoms|fath|f|m|meters?)\b',
+                            # Pattern 2: Just numbers (assume feet) - common in fishing data
+                            r'\b(\d+(?:\.\d+)?)\s*(?:depth|deep|ft|feet|f)?\b',
+                            # Pattern 3: "XX ft" or "XX feet" anywhere in text
+                            r'(\d+(?:\.\d+)?)\s*(ft|feet)',
+                            # Pattern 4: Stand-alone numbers in depth-likely contexts
+                            r'^(\d+(?:\.\d+)?)$'
+                        ]
                         
-                        # Standardize all depth measurements to feet for consistency
-                        if depth_unit in ['m', 'meter', 'meters']:
-                            depth_value = depth_value * 3.28084  # Convert meters to feet
-                        elif depth_unit in ['fathoms', 'fath', 'f']:
-                            depth_value = depth_value * 6        # Convert fathoms to feet
-                        # 'ft', 'feet' require no conversion
-                            
-                        depth = depth_value
+                        for pattern in depth_patterns:
+                            depth_match = re.search(pattern, cell_text, re.IGNORECASE)
+                            if depth_match:
+                                depth_value = float(depth_match.group(1))
+                                
+                                # Extract unit if available, default to feet
+                                depth_unit = 'ft'  # Default assumption: feet
+                                if len(depth_match.groups()) > 1 and depth_match.group(2):
+                                    depth_unit = depth_match.group(2).lower()
+                                
+                                # Convert all measurements to meters for GPX compatibility
+                                if depth_unit in ['ft', 'feet']:
+                                    depth_value = depth_value / 3.28084  # feet to meters
+                                elif depth_unit in ['fathoms', 'fath']:
+                                    depth_value = depth_value * 1.8288   # fathoms to meters (6 ft = 1.8288m)
+                                # Handle ambiguous 'f' - could be feet or fathoms
+                                elif depth_unit == 'f':
+                                    # Assume feet for values > 100, fathoms for smaller values
+                                    if depth_value <= 100:
+                                        depth_value = depth_value * 1.8288  # likely fathoms to meters
+                                    else:
+                                        depth_value = depth_value / 3.28084  # likely feet to meters
+                                # 'm', 'meter', 'meters' and default cases require no conversion
+                                
+                                # Validate reasonable depth range for NC fishing (0.3-305 meters / 1-1000 feet)
+                                if 0.3 <= depth_value <= 305:
+                                    depth = depth_value
+                                    break  # Stop searching once valid depth found
             
             # Extract final coordinate values and construct location dictionary
             if lat_cell and lon_cell:
@@ -363,20 +377,15 @@ class FishingPointScraper:
                             location['sym'] = 'Reef'
                             location['type'] = 'Artificial Reef'
                         
-                        # Log successful extraction with optional depth information
-                        depth_info = f" (depth: {depth:.0f} ft)" if depth else ""
-                        print(f"✓ Extracted: {name} at {latitude}, {longitude}{depth_info}")
+                        # Return location without individual logging
                         return location
                         
                     except (ValueError, AttributeError) as e:
-                        print(f"✗ Error parsing coordinates for {name}: {e}")
                         return None
             else:
-                print(f"⚠ Could not find DD coordinates for {name}")
                 return None
                 
         except Exception as e:
-            print(f"✗ Unexpected error extracting location from row: {e}")
             return None
 
     def extract_from_scripts(self, soup, base_url: str = None) -> List[Dict]:
@@ -473,6 +482,16 @@ class FishingPointScraper:
             if soup:
                 locations = self.parse_fishing_locations(soup, url)
                 
+                # Extract region name for logging
+                parsed_url = urlparse(url)
+                path_parts = parsed_url.path.strip('/').split('/')
+                region_name = "Unknown Region"
+                if len(path_parts) >= 4:
+                    region_slug = path_parts[3]
+                    region_name = ' '.join(word.capitalize() for word in region_slug.split('-'))
+                
+                print(f"✓ {region_name}: {len(locations)} locations")
+                
                 # Enrich each location with comprehensive metadata
                 for location in locations:
                     # Add scraping metadata
@@ -481,9 +500,6 @@ class FishingPointScraper:
                     
                     # Parse URL structure to extract geographical information
                     # Expected TidesPro URL format: https://www.tidespro.com/fishing/us/{state}/{region}
-                    parsed_url = urlparse(url)
-                    path_parts = parsed_url.path.strip('/').split('/')
-                    
                     if len(path_parts) >= 4 and path_parts[0] == 'fishing' and path_parts[1] == 'us':
                         # Extract and format state name from URL slug
                         state_slug = path_parts[2]
@@ -493,8 +509,6 @@ class FishingPointScraper:
                         
                         # Extract and format region/type information if available
                         if len(path_parts) >= 4:
-                            region_slug = path_parts[3]
-                            region_name = ' '.join(word.capitalize() for word in region_slug.split('-'))
                             # Only override type if not already set by structure classification
                             if 'type' not in location:
                                 location['region'] = region_name
@@ -528,8 +542,6 @@ def scraper():
     """
     
     print("=== North Carolina Fishing Points Scraper ===")
-    print(f"🎯 Target regions: {len(FISHING_URLS)} TidesPro.com pages")
-    print("🌊 Extracting: Wrecks, Reefs, and Artificial Structures")
     
     # Initialize scraper with configured session and headers
     scraper_instance = FishingPointScraper()
@@ -538,61 +550,41 @@ def scraper():
     all_locations = scraper_instance.scrape_urls(FISHING_URLS)
     
     if not all_locations:
-        print("⚠ No fishing locations found. Possible causes:")
-        print("  • Website structure may have changed")
-        print("  • Network connectivity issues")
-        print("  • Site may be blocking requests")
-        print("💡 Consider manually inspecting URLs to update parsing logic")
+        print("⚠ No fishing locations found - check network connectivity or site changes")
         return []
     
-    print(f"\n✓ Total locations extracted: {len(all_locations)}")
-    
     # Intelligent deduplication based on coordinate proximity
-    # Uses 6 decimal places precision (~0.1 meter accuracy)
     unique_locations = []
     seen_coordinates = set()
     
     for location in all_locations:
         if 'latitude' in location and 'longitude' in location:
-            # Create coordinate key with high precision for deduplication
             coord_key = (round(location['latitude'], 6), round(location['longitude'], 6))
-            
             if coord_key not in seen_coordinates:
                 seen_coordinates.add(coord_key)
                 unique_locations.append(location)
     
-    duplicates_removed = len(all_locations) - len(unique_locations)
-    print(f"✓ Unique locations after deduplication: {len(unique_locations)}")
-    if duplicates_removed > 0:
-        print(f"  Removed {duplicates_removed} duplicate coordinates")
+    print(f"\n✓ Total unique locations: {len(unique_locations)}")
     
-    # Setup output directory structure
-    project_root = Path(__file__).parent.parent.parent  # Navigate to project root
+    # Setup output directory and generate files
+    project_root = Path(__file__).parent.parent.parent
     output_dir = project_root / "point_files"
     output_dir.mkdir(exist_ok=True)
     
-    # Generate timestamp for consistent file naming
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    
-    # Create marine GPS-optimized GPX file
-    print(f"\n🗺️ Generating marine GPS files...")
-    gpx_generator = GPXGenerator()
     gpx_file = output_dir / f"nc_fishing_points_{timestamp}.gpx"
     
+    # Create marine GPS-optimized GPX file
+    gpx_generator = GPXGenerator()
     gpx_success = gpx_generator.create_gpx_file(unique_locations, str(gpx_file))
     
     if gpx_success:
-        # Export raw JSON data for analysis, debugging, and API development
+        # Export raw JSON data
         json_file = output_dir / f"nc_fishing_data_{timestamp}.json"
         with open(json_file, 'w', encoding='utf-8') as f:
             json.dump(unique_locations, f, indent=2, default=str, ensure_ascii=False)
-        print(f"✓ Raw data exported: {json_file}")
         
-        # Success summary
-        print(f"\n🎉 Scraping completed successfully!")
-        print(f"📁 Files saved to: {output_dir}")
-        print(f"🎣 Ready for GPS import: {gpx_file.name}")
-        
+        print(f"✓ Files saved: {gpx_file.name}")
         return unique_locations
     else:
         print("✗ GPX file generation failed")

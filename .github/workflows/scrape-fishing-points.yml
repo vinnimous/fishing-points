@@ -1,87 +1,148 @@
+# North Carolina Fishing Points - Automated Scraping Workflow
+#
+# This GitHub Actions workflow automatically scrapes fishing location data from
+# TidesPro.com and generates marine GPS-optimized GPX files for North Carolina waters.
+#
+# Features:
+# - Weekly automated runs (Sundays 6:00 AM UTC) 
+# - Manual trigger capability via GitHub Actions UI
+# - Automatic GitHub release creation with GPX/JSON files
+# - Cross-platform Python environment management
+# - Comprehensive error handling and artifact retention
+
 name: Scrape NC Fishing Points
 
 on:
   push:
-    branches: [ master ]
-  workflow_dispatch:
+    branches: [ master ]          # Trigger on pushes to master branch
+  workflow_dispatch:              # Allow manual execution via GitHub Actions UI
   schedule:
-    # Run weekly on Sundays at 6:00 AM UTC
+    # Run weekly on Sundays at 6:00 AM UTC (1:00 AM EST, 2:00 AM EDT)
     - cron: '0 6 * * 0'
 
 permissions:
-  contents: write
+  contents: write                 # Required for creating releases and uploading assets
 
 jobs:
   scrape:
+    name: Extract NC Fishing Locations
     runs-on: ubuntu-latest
+    timeout-minutes: 30           # Prevent hanging jobs
     
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 1           # Shallow clone for faster checkout
       
-    - name: Set up Python
+    - name: Set up Python environment
       uses: actions/setup-python@v4
       with:
         python-version: '3.11'
+        cache: 'pip'             # Cache pip dependencies for faster builds
         
-    - name: Create virtual environment
+    - name: Create and activate virtual environment
       run: |
         python -m venv venv
         source venv/bin/activate
         echo "VIRTUAL_ENV=$VIRTUAL_ENV" >> $GITHUB_ENV
         echo "$VIRTUAL_ENV/bin" >> $GITHUB_PATH
+        echo "✅ Virtual environment created and activated"
         
-    - name: Install dependencies
+    - name: Install project dependencies
       run: |
         pip install --upgrade pip
         pip install -r requirements.txt
+        echo "✅ Dependencies installed successfully"
         
-    - name: Run fishing points scraper
-      run: python main.py
-      
-    - name: Get current date
-      id: date
-      run: echo "date=$(date +'%Y%m%d_%H%M%S')" >> $GITHUB_OUTPUT
-      
-    - name: List generated files
+    - name: Execute NC fishing points scraper
       run: |
-        echo "Generated files:"
+        echo "🌊 Starting North Carolina fishing points extraction..."
+        python main.py
+        echo "✅ Scraping completed successfully"
+      
+    - name: Generate timestamp for releases
+      id: date
+      run: |
+        TIMESTAMP=$(date +'%Y%m%d_%H%M%S')
+        echo "date=$TIMESTAMP" >> $GITHUB_OUTPUT
+        echo "📅 Release timestamp: $TIMESTAMP"
+      
+    - name: Validate generated files
+      run: |
+        echo "📋 Validating generated files..."
         ls -la point_files/
         
-    - name: Upload artifacts
+        # Count files and validate they exist
+        GPX_COUNT=$(find point_files/ -name "*.gpx" | wc -l)
+        JSON_COUNT=$(find point_files/ -name "*.json" | wc -l)
+        
+        echo "📊 Generated files summary:"
+        echo "  GPX files: $GPX_COUNT"
+        echo "  JSON files: $JSON_COUNT"
+        
+        if [ $GPX_COUNT -eq 0 ]; then
+          echo "❌ No GPX files generated - scraping may have failed"
+          exit 1
+        fi
+        
+    - name: Upload workflow artifacts
       uses: actions/upload-artifact@v4
       with:
         name: nc-fishing-points-${{ steps.date.outputs.date }}
         path: point_files/
         retention-days: 30
+        if-no-files-found: error
         
-    - name: Create Release
+    - name: Create GitHub Release
       if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
       uses: softprops/action-gh-release@v1
       with:
         tag_name: release-${{ steps.date.outputs.date }}
-        name: NC Fishing Points - ${{ steps.date.outputs.date }}
+        name: 🎣 NC Fishing Points - ${{ steps.date.outputs.date }}
         body: |
-          Automated scrape of North Carolina fishing points from TidesPro.com
+          ## 🌊 North Carolina Fishing Points - Weekly Update
           
-          Generated on: ${{ steps.date.outputs.date }}
+          Automated extraction of fishing locations from TidesPro.com for all NC coastal regions.
           
-          Files included:
-          - GPX file with waypoints for GPS devices
-          - JSON file with raw scraped data
+          ### 📅 Release Information
+          - **Generated**: ${{ steps.date.outputs.date }}
+          - **Source**: TidesPro.com fishing database
+          - **Format**: Marine GPS optimized
           
-          **Usage:**
-          - Download the GPX file and import into your GPS device or navigation app
-          - Use the JSON file for data analysis or custom applications
+          ### 📁 Files Included
+          - **🗺️ GPX File**: Marine GPS waypoint file for direct device import
+          - **📊 JSON File**: Raw structured data for analysis and development
           
-          **Coverage:**
-          - Estuarine fishing locations
-          - Long Bay fishing locations  
-          - Onslow Bay fishing locations
-          - Outer Banks fishing locations
-          - Raleigh Bay fishing locations
+          ### 🎯 GPS Device Usage
+          1. Download the `.gpx` file
+          2. Import into your marine GPS device or navigation app
+          3. Waypoints optimized for Garmin devices and Active Captain
+          
+          ### 🌊 Coverage Areas
+          - **Estuarine Waters**: Inshore and coastal fishing spots
+          - **Long Bay**: Offshore fishing structures  
+          - **Onslow Bay**: Mid-coast offshore locations
+          - **Outer Banks**: Cape Hatteras region structures
+          - **Raleigh Bay**: Northern offshore fishing areas
+          
+          ### 🏗️ Structure Types
+          - Shipwrecks (🚢 Shipwreck symbol)
+          - Artificial Reefs (🐟 Fish symbol)  
+          - Concrete Reefs (🐟 Fish symbol)
+          
+          ### 📋 Technical Details
+          - **Coordinate Format**: Decimal degrees (WGS84)
+          - **Depth Units**: Feet (where available)
+          - **Symbol Optimization**: Marine GPS compatible
+          - **Name Format**: Truncated for 10-character displays
+          
+          ---
+          
+          🤖 *This release was automatically generated by GitHub Actions*
         files: |
           point_files/*.gpx
           point_files/*.json
         draft: false
         prerelease: false
+        generate_release_notes: false
